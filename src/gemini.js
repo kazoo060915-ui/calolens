@@ -34,11 +34,60 @@ const PROMPT = `あなたは日本の管理栄養士です。食事の内容を�
 ルール:
 - 料理・食品ごとに items を分けてください（ご飯、味噌汁、主菜などは別々に）。
 - 器の大きさや一般的な1人前の量から分量を推定し、amount に「茶碗1杯 150g」のように記載してください。
+- 【重要】袋入りのパン（スティックパン、ロールパン、食パンなど）や複数個入りの市販食品・お菓子が写っている場合は、1袋全体の合計ではなく必ず「1本あたり」「1個あたり」「1枚あたり」を1単位として栄養価を算出してください（ユーザーが後から本数・個数を＋ボタンで増やせるようにするため）。
+- パッケージに「栄養成分表示」やカロリー表記の文字が見える場合は、その数値を最優先で正確に読み取ってください。
 - 日本食品標準成分表（八訂）や一般的な市販品・外食チェーンの栄養成分値を参考に、kcal・たんぱく質(g)・脂質(g)・炭水化物(g)を推定してください。
 - 数値は現実的な値にし、kcal は整数、PFC は小数第1位まで。
 - 調理油やドレッシング、ソースなど見えにくいカロリーも考慮してください。
 - 食べ物が含まれていない場合は isFood=false、items は空配列にしてください。
 - comment は日本語で、前向きで具体的なアドバイスを50文字以内で。`;
+
+const LABEL_PROMPT = `あなたは市販食品の栄養成分表示・バーコード・パッケージ読み取りの専門家です。
+画像に写っている「栄養成分表示ラベル」「商品パッケージ」「バーコード（JANコード）」から、商品の栄養価を正確に読み取ってください。
+
+ルール:
+- 「栄養成分表示」が写っている場合は、そこに記載された熱量(kcal)・たんぱく質(g)・脂質(g)・炭水化物(g)の数値をそのまま正確に採用してください（isFood=true にしてください）。
+- スティックパンや複数個入りの袋パン・お菓子などの場合は、1袋全体ではなく「1本あたり」「1個あたり」「1枚あたり」の単位で出力してください（amount に「1本」「1個」「1包装」など表示単位を記載）。
+- 栄養成分表示が写っておらずパッケージ表面やバーコードのみの場合は、メーカー名・商品名（ヤマザキ、セブンイレブン、ローソン、ファミリーマート等）を特定し、公式の栄養成分値（1個・1本あたり）を推定してください。
+- comment には読み取った商品の特徴や栄養面の一言コメントを50文字以内で記載してください。`;
+
+/** 画像からバーコード(JAN)を検出し、Open Food Factsから製品情報を取得できれば返す */
+async function lookupBarcodeFromImage(imageDataUrl) {
+  try {
+    if (!('BarcodeDetector' in window)) return null;
+    const img = new Image();
+    img.src = imageDataUrl;
+    await img.decode();
+    const detector = new window.BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a'] });
+    const codes = await detector.detect(img);
+    const code = codes?.[0]?.rawValue;
+    if (!code) return null;
+    const res = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json`);
+    if (!res.ok) return `検出バーコード(JAN): ${code}`;
+    const json = await res.json();
+    if (json.status !== 1 || !json.product) return `検出バーコード(JAN): ${code}`;
+    const p = json.product;
+    const n = p.nutriments || {};
+    return [
+      `検出バーコード(JAN): ${code}`,
+      `商品名: ${p.product_name_ja || p.product_name || ''}`,
+      `ブランド: ${p.brands || ''}`,
+      `1食/1個量: ${p.serving_size || p.quantity || ''}`,
+      n['energy-kcal_serving'] ? `1単位kcal: ${n['energy-kcal_serving']}` : '',
+      n['proteins_serving'] ? `1単位P: ${n['proteins_serving']}g` : '',
+      n['fat_serving'] ? `1単位F: ${n['fat_serving']}g` : '',
+      n['carbohydrates_serving'] ? `1単位C: ${n['carbohydrates_serving']}g` : '',
+      n['energy-kcal_100g'] ? `100gあたりkcal: ${n['energy-kcal_100g']}` : '',
+      n['proteins_100g'] ? `100gあたりP: ${n['proteins_100g']}g` : '',
+      n['fat_100g'] ? `100gあたりF: ${n['fat_100g']}g` : '',
+      n['carbohydrates_100g'] ? `100gあたりC: ${n['carbohydrates_100g']}g` : '',
+    ]
+      .filter(Boolean)
+      .join(' / ');
+  } catch {
+    return null;
+  }
+}
 
 async function fetchWithRetry(url, options, maxRetries = 2) {
   let attempt = 0;
@@ -78,20 +127,25 @@ async function fetchWithRetry(url, options, maxRetries = 2) {
 }
 
 /**
- * @param {{imageDataUrl?: string, text?: string}} input
+ * @param {{imageDataUrl?: string, text?: string, mode?: 'meal' | 'label'}} input
  * @param {{apiKey: string, model: string, signal?: AbortSignal}} opts
  */
-export async function analyzeMeal({ imageDataUrl, text }, { apiKey, model, signal }) {
+export async function analyzeMeal({ imageDataUrl, text, mode = 'meal' }, { apiKey, model, signal }) {
   if (!apiKey) throw new Error('Gemini APIキーが未設定です。設定画面から登録してください。');
 
   const cleanKey = apiKey.trim();
   const parts = [];
+  let barcodeInfo = null;
   if (imageDataUrl) {
     const [meta, data] = imageDataUrl.split(',');
     const mime = meta.match(/data:(.*?);/)?.[1] || 'image/jpeg';
     parts.push({ inline_data: { mime_type: mime, data } });
+    barcodeInfo = await lookupBarcodeFromImage(imageDataUrl);
   }
-  let prompt = PROMPT;
+  let prompt = mode === 'label' ? LABEL_PROMPT : PROMPT;
+  if (barcodeInfo) {
+    prompt += `\n\n【バーコードデータベース照会結果（参考情報）】\n${barcodeInfo}`;
+  }
   if (text?.trim()) {
     prompt += imageDataUrl
       ? `\n\nユーザーからの補足: ${text.trim()}`

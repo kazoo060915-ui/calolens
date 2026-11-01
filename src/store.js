@@ -74,6 +74,7 @@ export const store = {
         protein: num(i.protein),
         fat: num(i.fat),
         carbs: num(i.carbs),
+        qty: num(i.qty, 1) > 0 ? num(i.qty, 1) : 1,
       })),
       kcal: Math.round(totals.kcal),
       protein: totals.protein,

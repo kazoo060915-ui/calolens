@@ -6,7 +6,41 @@ import { analyzeMeal } from './gemini.js';
 import { loadImage, resizeImage, putPhoto, deletePhoto, hydratePhotos } from './photos.js';
 import { MEAL_TYPES, esc, uid, sumItems, fmtInt, r1, guessMealType, todayStr, fmtDateJP } from './utils.js';
 
-const emptyItem = () => ({ name: '', amount: '', kcal: '', protein: '', fat: '', carbs: '' });
+const emptyItem = () => ({ name: '', amount: '', kcal: '', protein: '', fat: '', carbs: '', qty: 1 });
+const QTY_STEPS = [0.25, 0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+
+function ensureBase(it) {
+  const q = Number(it.qty) > 0 ? Number(it.qty) : 1;
+  if (!it._base) {
+    it._base = {
+      kcal: (Number(it.kcal) || 0) / q,
+      protein: (Number(it.protein) || 0) / q,
+      fat: (Number(it.fat) || 0) / q,
+      carbs: (Number(it.carbs) || 0) / q,
+      amount: String(it.amount || '').replace(/\s*[×xX]\s*[\d.]+$/, ''),
+    };
+  }
+}
+
+function formatScaledAmount(baseAmount, qty) {
+  const clean = String(baseAmount || '').trim();
+  if (!clean) return qty === 1 ? '' : `×${qty}`;
+  if (qty === 1) return clean;
+  if (/^1(本|個|杯|枚|袋|切れ|皿|人前|パック|缶)$/.test(clean)) {
+    return clean.replace(/^1/, String(qty));
+  }
+  return `${clean} ×${qty}`;
+}
+
+function applyQty(it, nextQty) {
+  ensureBase(it);
+  it.qty = nextQty;
+  it.kcal = Math.round(it._base.kcal * nextQty);
+  it.protein = r1(it._base.protein * nextQty);
+  it.fat = r1(it._base.fat * nextQty);
+  it.carbs = r1(it._base.carbs * nextQty);
+  it.amount = formatScaledAmount(it._base.amount, nextQty);
+}
 
 /** 追加方法を選ぶメニュー */
 export function openAddMenu({ date = todayStr(), mealType = guessMealType() } = {}) {
@@ -38,6 +72,10 @@ export function openAddMenu({ date = todayStr(), mealType = guessMealType() } = 
         <input type="file" accept="image/*" class="sr-only" id="file-album" />
       </label>
     </div>
+    <label class="btn btn-ghost btn-block" id="opt-label" style="margin-top:10px;cursor:pointer">
+      ${icons.sparkles} <span>市販品の成分表・バーコード読取</span>
+      <input type="file" accept="image/*" capture="environment" class="sr-only" id="file-label" />
+    </label>
     <div class="divider"><span>または</span></div>
     <div class="text-ai">
       <textarea class="input" id="ai-text" rows="2" placeholder="例：牛丼 並盛とみそ汁、サラダ"></textarea>
@@ -92,14 +130,15 @@ export function openAddMenu({ date = todayStr(), mealType = guessMealType() } = 
     }
   });
 
-  const onFile = (e) => {
+  const onFile = (mode = 'meal') => (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     sheet.close();
-    openEditor({ date, mealType, file });
+    openEditor({ date, mealType, file, mode });
   };
-  sheet.el.querySelector('#file-camera').addEventListener('change', onFile);
-  sheet.el.querySelector('#file-album').addEventListener('change', onFile);
+  sheet.el.querySelector('#file-camera').addEventListener('change', onFile('meal'));
+  sheet.el.querySelector('#file-album').addEventListener('change', onFile('meal'));
+  sheet.el.querySelector('#file-label').addEventListener('change', onFile('label'));
   sheet.el.querySelector('#btn-text-ai').addEventListener('click', () => {
     const text = sheet.el.querySelector('#ai-text').value.trim();
     if (!text) {
@@ -117,9 +156,9 @@ export function openAddMenu({ date = todayStr(), mealType = guessMealType() } = 
 
 /**
  * 食事編集シート
- * @param {{date?:string, mealType?:string, file?:File, text?:string, meal?:object}} opts
+ * @param {{date?:string, mealType?:string, file?:File, text?:string, meal?:object, mode?:'meal'|'label'}} opts
  */
-export function openEditor({ date, mealType, file, text, meal } = {}) {
+export function openEditor({ date, mealType, file, text, meal, mode = 'meal' } = {}) {
   const isEdit = !!meal;
   const draft = meal
     ? structuredClone(meal)
@@ -132,6 +171,7 @@ export function openEditor({ date, mealType, file, text, meal } = {}) {
     thumb: null, // 新しく撮った写真のサムネイル
     apiImage: null, // AI送信用画像
     text: text || '',
+    mode,
   };
 
   let abortCtrl = null;
@@ -169,7 +209,7 @@ export function openEditor({ date, mealType, file, text, meal } = {}) {
         ${
           ctx.status === 'analyzing'
             ? `<div class="scan-line"></div><div class="scan-corners"></div>
-               <div class="analyzing-label">${icons.sparkles} AIが料理を解析中…</div>`
+               <div class="analyzing-label">${icons.sparkles} ${ctx.mode === 'label' ? '成分表・バーコードを解析中…' : 'AIが料理を解析中…'}</div>`
             : ctx.status === 'ready' && draft.items.length
               ? `<div class="photo-total"><div class="v num" id="photo-kcal">${fmtInt(totals.kcal)}<small> kcal</small></div></div>`
               : ''
@@ -177,12 +217,21 @@ export function openEditor({ date, mealType, file, text, meal } = {}) {
       </div>`;
   };
 
-  const itemHtml = (it, i) => `
+  const itemHtml = (it, i) => {
+    const qty = Number(it.qty) > 0 ? Number(it.qty) : 1;
+    return `
     <div class="item-card" style="animation-delay:${i * 60}ms">
       <div class="row1">
-        <input class="input" data-idx="${i}" data-key="name" value="${esc(it.name)}" placeholder="料理名" />
-        <input class="input" data-idx="${i}" data-key="amount" value="${esc(it.amount)}" placeholder="量" />
+        <input class="input" data-idx="${i}" data-key="name" value="${esc(it.name)}" placeholder="料理・商品名" />
         <button class="icon-btn" data-remove="${i}" aria-label="削除">${icons.trash}</button>
+      </div>
+      <div class="row-qty">
+        <input class="input" data-idx="${i}" data-key="amount" value="${esc(it.amount)}" placeholder="量（例: 1杯、1本）" />
+        <div class="qty-stepper" aria-label="数量調整">
+          <button type="button" class="qty-btn" data-qty-idx="${i}" data-qty-dir="-1" aria-label="減らす">−</button>
+          <span class="qty-val num">×${qty}</span>
+          <button type="button" class="qty-btn" data-qty-idx="${i}" data-qty-dir="1" aria-label="増やす">＋</button>
+        </div>
       </div>
       <div class="row2">
         <div class="mini-field" style="--c:var(--accent)"><span class="tag">kcal</span>
@@ -195,6 +244,7 @@ export function openEditor({ date, mealType, file, text, meal } = {}) {
           <input class="input" inputmode="decimal" data-idx="${i}" data-key="carbs" value="${esc(it.carbs)}" placeholder="0" /></div>
       </div>
     </div>`;
+  };
 
   const totalsHtml = () => {
     const t = sumItems(draft.items);
@@ -292,14 +342,14 @@ export function openEditor({ date, mealType, file, text, meal } = {}) {
       const { apiKey, model } = store.state.settings;
       const hint = [ctx.apiImage ? '' : ctx.text, extraHint].filter(Boolean).join('\n');
       const result = await analyzeMeal(
-        { imageDataUrl: ctx.apiImage, text: ctx.apiImage ? extraHint : hint },
+        { imageDataUrl: ctx.apiImage, text: ctx.apiImage ? extraHint : hint, mode: ctx.mode },
         { apiKey, model, signal: abortCtrl.signal }
       );
       if (isDisposed) return;
       if (!result.isFood || !result.items.length) {
         throw new Error('食べ物を認識できませんでした。別の角度から撮影するか、手動で入力してください。');
       }
-      draft.items = result.items;
+      draft.items = result.items.map((i) => ({ ...i, qty: 1 }));
       if (!draft.name || !isEdit) draft.name = result.mealName;
       draft.comment = result.comment;
       ctx.status = 'ready';
@@ -320,14 +370,41 @@ export function openEditor({ date, mealType, file, text, meal } = {}) {
     const t = e.target;
     dirty = true;
     if (t.dataset.idx !== undefined) {
-      draft.items[+t.dataset.idx][t.dataset.key] = t.value;
-      if (['kcal', 'protein', 'fat', 'carbs'].includes(t.dataset.key)) updateTotals();
+      const it = draft.items[+t.dataset.idx];
+      const key = t.dataset.key;
+      it[key] = t.value;
+      const q = Number(it.qty) > 0 ? Number(it.qty) : 1;
+      ensureBase(it);
+      if (['kcal', 'protein', 'fat', 'carbs'].includes(key)) {
+        it._base[key] = (Number(t.value) || 0) / q;
+        updateTotals();
+      } else if (key === 'amount') {
+        it._base.amount = String(t.value || '').replace(/\s*[×xX]\s*[\d.]+$/, '');
+      }
     } else if (t.dataset.draft) {
       draft[t.dataset.draft] = t.value;
     }
   });
 
   el.addEventListener('click', async (e) => {
+    const qtyBtn = e.target.closest('[data-qty-idx]');
+    if (qtyBtn) {
+      const idx = +qtyBtn.dataset.qtyIdx;
+      const dir = +qtyBtn.dataset.qtyDir;
+      const it = draft.items[idx];
+      if (!it) return;
+      const curQty = Number(it.qty) > 0 ? Number(it.qty) : 1;
+      let stepIdx = QTY_STEPS.findIndex((s) => s >= curQty);
+      if (stepIdx === -1) stepIdx = QTY_STEPS.length - 1;
+      const nextIdx = Math.max(0, Math.min(QTY_STEPS.length - 1, stepIdx + dir));
+      const nextQty = QTY_STEPS[nextIdx];
+      if (nextQty === curQty) return;
+      dirty = true;
+      applyQty(it, nextQty);
+      el.querySelector('#items').innerHTML = draft.items.map(itemHtml).join('');
+      updateTotals();
+      return;
+    }
     const typeBtn = e.target.closest('[data-type]');
     if (typeBtn) {
       draft.mealType = typeBtn.dataset.type;

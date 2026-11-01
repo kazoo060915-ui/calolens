@@ -1586,16 +1586,63 @@ textarea.input {
 
 .item-card .row1 {
   display: grid;
-  grid-template-columns: 1fr 96px 40px;
+  grid-template-columns: 1fr 40px;
   gap: 8px;
   align-items: center;
+}
+
+.item-card .row-qty {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.qty-stepper {
+  display: inline-flex;
+  align-items: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  height: 42px;
+  padding: 2px;
+}
+
+.qty-btn {
+  width: 38px;
+  height: 36px;
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  font-size: 18px;
+  font-weight: 900;
+  border-radius: 9px;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  user-select: none;
+  transition: background 0.15s, transform 0.1s;
+}
+
+.qty-btn:active {
+  background: rgba(52, 211, 153, 0.2);
+  transform: scale(0.92);
+}
+
+.qty-val {
+  min-width: 40px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text);
 }
 
 .item-card .row2 {
   display: grid;
   grid-template-columns: 1.2fr 1fr 1fr 1fr;
   gap: 8px;
-  margin-top: 8px;
+  margin-top: 10px;
 }
 
 .item-card .input {
