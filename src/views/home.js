@@ -4,13 +4,18 @@ import { store } from '../store.js';
 import { hydratePhotos } from '../photos.js';
 import { openAddMenu, openEditor } from '../meal-editor.js';
 import { openWeightSheet } from './weight.js';
-import { MEAL_TYPES, todayStr, addDays, fmtDateJP, fmtShort, esc, fmtInt, r1, pfcTargets, sumItems } from '../utils.js';
+import { MEAL_TYPES, todayStr, addDays, fmtDateJP, fmtShort, esc, fmtInt, r1, pfcTargets, sumItems, num } from '../utils.js';
 
 let date = todayStr();
 const R = 66;
 const CIRC = 2 * Math.PI * R;
 
 export const home = {
+  setDate(d) {
+    if (d && /^\d{4}-\d{2}-\d{2}$/.test(d)) {
+      date = d > todayStr() ? todayStr() : d;
+    }
+  },
   mount(view, header) {
     this.view = view;
     this.headerEl = header;
@@ -73,6 +78,9 @@ export const home = {
     const prevList = store.weightList().filter((x) => x.date < date);
     const prev = prevList[prevList.length - 1];
     const diff = w && prev ? r1(w.weight - prev.weight) : null;
+    const tw = num(s.targetWeight, 0);
+    const isGainGoal = tw && w && tw > w.weight + 0.3;
+    const diffCls = diff === null ? '' : (isGainGoal ? diff > 0 : diff < 0) ? 'down' : (isGainGoal ? diff < 0 : diff > 0) ? 'up' : 'flat';
 
     this.view.innerHTML = `
       <h1 class="sr-only">CaloLens ${fmtDateJP(date)}のカロリー記録</h1>
@@ -122,7 +130,7 @@ export const home = {
             ${
               w
                 ? `<div class="v num">${w.weight.toFixed(1)}<small style="font-size:13px;color:var(--text-3)"> kg</small>
-                   ${diff !== null ? `<span class="delta ${diff < 0 ? 'down' : diff > 0 ? 'up' : 'flat'}">${diff > 0 ? '+' : ''}${diff.toFixed(1)}</span>` : ''}</div>`
+                   ${diff !== null ? `<span class="delta ${diffCls}">${diff > 0 ? '+' : ''}${diff.toFixed(1)}</span>` : ''}</div>`
                 : `<div style="font-weight:700;margin-top:2px">タップして記録</div>`
             }
           </div>

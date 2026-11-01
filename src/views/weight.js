@@ -10,48 +10,88 @@ let metric = 'weight'; // 'weight' | 'muscle' | 'fat'
 let chart = null;
 
 /** 体重入力シート（ホームからも呼ばれる） */
-export function openWeightSheet(date = todayStr()) {
-  const cur = store.state.weights[date];
+export function openWeightSheet(initialDate = todayStr()) {
+  let date = initialDate;
   const last = store.latestWeight();
-  const sheet = openSheet(`
-    <h2 class="sheet-title">体重・体組成を記録 <span class="card-sub" style="font-weight:500">${fmtDateJP(date)}</span></h2>
-    <div class="weight-input-main">
-      <div class="field"><label for="ws-weight">体重</label>
-        <div class="input-group"><input class="input big-input" id="ws-weight" type="number" inputmode="decimal" step="0.1" min="20" max="300"
-          value="${cur ? cur.weight : last ? last.weight : ''}" placeholder="60.0" /><span class="suffix">kg</span></div></div>
-    </div>
-    <div class="weight-input-sub">
-      <div class="field"><label for="ws-fat">体脂肪率（任意）</label>
-        <div class="input-group"><input class="input sub-input" id="ws-fat" type="number" inputmode="decimal" step="0.1" min="1" max="70"
-          value="${cur?.bodyFat ?? ''}" placeholder="—" /><span class="suffix">%</span></div></div>
-      <div class="field"><label for="ws-muscle">筋肉量（任意）</label>
-        <div class="input-group"><input class="input sub-input" id="ws-muscle" type="number" inputmode="decimal" step="0.1" min="5" max="150"
-          value="${cur?.muscleMass ?? ''}" placeholder="—" /><span class="suffix">kg</span></div></div>
-    </div>
-    <div class="sheet-actions">
-      ${cur ? `<button class="btn btn-danger" data-act="delete" aria-label="削除">${icons.trash}</button>` : ''}
-      <button class="btn btn-primary" data-act="save" id="btn-save-weight">${icons.check} 記録する</button>
-    </div>`);
-  const input = sheet.el.querySelector('#ws-weight');
-  setTimeout(() => input.select(), 400);
-  sheet.el.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && e.target.tagName === 'INPUT') sheet.el.querySelector('[data-act="save"]').click();
+  const sheet = openSheet('');
+
+  const renderForm = () => {
+    const cur = store.state.weights[date];
+    sheet.el.innerHTML = `
+      <h2 class="sheet-title">
+        <span>体重・体組成を記録</span>
+        <button class="icon-btn" data-act="close" aria-label="閉じる">${icons.x}</button>
+      </h2>
+      <div class="field" style="margin-bottom:12px">
+        <label for="ws-date">記録する日付</label>
+        <input class="input" id="ws-date" type="date" value="${date}" max="${todayStr()}" />
+      </div>
+      <div class="weight-input-main">
+        <div class="field"><label for="ws-weight">体重</label>
+          <div class="input-group"><input class="input big-input" id="ws-weight" type="number" inputmode="decimal" step="0.1" min="20" max="300"
+            value="${cur ? cur.weight : last ? last.weight : ''}" placeholder="60.0" /><span class="suffix">kg</span></div></div>
+      </div>
+      <div class="weight-input-sub">
+        <div class="field"><label for="ws-fat">体脂肪率（任意）</label>
+          <div class="input-group"><input class="input sub-input" id="ws-fat" type="number" inputmode="decimal" step="0.1" min="1" max="70"
+            value="${cur?.bodyFat ?? ''}" placeholder="—" /><span class="suffix">%</span></div></div>
+        <div class="field"><label for="ws-muscle">筋肉量（任意）</label>
+          <div class="input-group"><input class="input sub-input" id="ws-muscle" type="number" inputmode="decimal" step="0.1" min="5" max="150"
+            value="${cur?.muscleMass ?? ''}" placeholder="—" /><span class="suffix">kg</span></div></div>
+      </div>
+      <div class="sheet-actions">
+        ${cur ? `<button class="btn btn-danger" data-act="delete" aria-label="削除">${icons.trash}</button>` : ''}
+        <button class="btn btn-primary" data-act="save" id="btn-save-weight">${icons.check} 記録する</button>
+      </div>`;
+  };
+
+  renderForm();
+  setTimeout(() => sheet.el.querySelector('#ws-weight')?.select(), 350);
+
+  sheet.el.addEventListener('change', (e) => {
+    if (e.target.id === 'ws-date' && e.target.value) {
+      date = e.target.value > todayStr() ? todayStr() : e.target.value;
+      renderForm();
+    }
   });
+
+  sheet.el.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.id !== 'ws-date') {
+      sheet.el.querySelector('[data-act="save"]')?.click();
+    }
+  });
+
   sheet.el.addEventListener('click', async (e) => {
     const act = e.target.closest('[data-act]')?.dataset.act;
+    if (act === 'close') sheet.close();
     if (act === 'save') {
+      const input = sheet.el.querySelector('#ws-weight');
       const w = num(input.value, NaN);
-      if (!(w >= 20 && w <= 300)) return toast('体重を正しく入力してください', 'error');
-      const fatVal = sheet.el.querySelector('#ws-fat').value;
-      const muscleVal = sheet.el.querySelector('#ws-muscle').value;
-      store.setWeight(date, r1(w), fatVal, muscleVal);
+      if (!(w >= 20 && w <= 300)) return toast('体重を20〜300kgの範囲で入力してください', 'error');
+      const fatRaw = sheet.el.querySelector('#ws-fat').value.trim();
+      const muscleRaw = sheet.el.querySelector('#ws-muscle').value.trim();
+      if (fatRaw !== '') {
+        const bf = num(fatRaw, NaN);
+        if (!(bf >= 1 && bf <= 70)) return toast('体脂肪率は1〜70%の範囲で入力してください', 'error');
+      }
+      if (muscleRaw !== '') {
+        const mm = num(muscleRaw, NaN);
+        if (!(mm >= 5 && mm <= 150)) return toast('筋肉量は5〜150kgの範囲で入力してください', 'error');
+      }
+      store.setWeight(date, r1(w), fatRaw === '' ? null : r1(num(fatRaw)), muscleRaw === '' ? null : r1(num(muscleRaw)));
       sheet.close();
-      toast(`${r1(w).toFixed(1)} kg を記録しました`);
+      toast(`${fmtDateJP(date)}：${r1(w).toFixed(1)} kg を記録しました`);
     }
     if (act === 'delete') {
-      sheet.close();
-      if (await confirmSheet({ title: '記録を削除', message: `${fmtDateJP(date)}の記録を削除します。`, okLabel: '削除する', danger: true })) {
+      const ok = await confirmSheet({
+        title: '記録を削除',
+        message: `${fmtDateJP(date)}の記録を削除します。`,
+        okLabel: '削除する',
+        danger: true,
+      });
+      if (ok) {
         store.deleteWeight(date);
+        sheet.close();
         toast('削除しました');
       }
     }
@@ -117,6 +157,10 @@ export const weight = {
     }
 
     const filtered = range ? list.filter((x) => x.date >= addDays(todayStr(), -range + 1)) : list;
+    const hasMetricData = filtered.some((x) =>
+      metric === 'muscle' ? x.muscleMass != null : metric === 'fat' ? x.bodyFat != null : x.weight != null
+    );
+    const isGainGoal = tw && latest && tw > latest.weight + 0.3;
 
     this.view.innerHTML = `
       <div class="stack">
@@ -136,7 +180,7 @@ export const weight = {
               <div class="v num">${latest ? latest.weight.toFixed(1) : '—'}<small>kg</small></div>
               <div class="s">${latest ? fmtShort(latest.date) + ' 時点' : '記録なし'}</div></div>
             <div class="stat"><div class="k">1週間の変化</div>
-              <div class="v num">${deltaHtml(latest && weekAgo ? latest.weight - weekAgo.weight : null)}</div>
+              <div class="v num">${deltaHtml(latest && weekAgo ? latest.weight - weekAgo.weight : null, false, isGainGoal)}</div>
               <div class="s">${weekAgo ? fmtShort(weekAgo.date) + ' 比' : 'データ不足'}</div></div>
             <div class="stat"><div class="k">筋肉量</div>
               <div class="v num" style="color:var(--muscle)">${latestMuscle ? latestMuscle.muscleMass.toFixed(1) : '—'}<small>kg</small></div>
@@ -183,9 +227,9 @@ export const weight = {
             </div>
           </div>
           ${
-            filtered.length
+            hasMetricData
               ? `<div class="chart-box"><canvas id="weight-chart" aria-label="推移グラフ"></canvas></div>`
-              : `<div class="empty"><div class="big">📈</div>この期間の記録がありません。<br />毎日記録してグラフで変化を見てみましょう！</div>`
+              : `<div class="empty"><div class="big">📈</div>この期間の${metric === 'muscle' ? '筋肉量' : metric === 'fat' ? '体脂肪率' : '体重'}記録がありません。<br />記録を追加してグラフで変化を見てみましょう！</div>`
           }
         </section>
 
@@ -201,7 +245,7 @@ export const weight = {
                       const prev = arr[i + 1];
                       return `<div class="history-item">
                         <span class="d">${fmtDateJP(x.date)}</span>
-                        ${prev ? deltaHtml(x.weight - prev.weight, true) : ''}
+                        ${prev ? deltaHtml(x.weight - prev.weight, true, isGainGoal) : ''}
                         <div class="meta-col">
                           ${x.muscleMass != null ? `<span class="mm num">筋肉 ${x.muscleMass.toFixed(1)}kg</span>` : ''}
                           ${x.bodyFat != null ? `<span class="bf num">体脂肪 ${x.bodyFat.toFixed(1)}%</span>` : ''}
@@ -333,12 +377,14 @@ function hexToRgba(hex, alpha) {
   return `rgba(52,211,153,${alpha})`;
 }
 
-function deltaHtml(d, small = false) {
+function deltaHtml(d, small = false, isGainGoal = false) {
   if (d === null || d === undefined) return '—';
   const v = r1(d);
-  const cls = v < 0 ? 'down' : v > 0 ? 'up' : 'flat';
+  const good = isGainGoal ? v > 0 : v < 0;
+  const bad = isGainGoal ? v < 0 : v > 0;
+  const cls = good ? 'down' : bad ? 'up' : 'flat';
   const txt = `${v > 0 ? '+' : ''}${v.toFixed(1)}${small ? '' : '<small>kg</small>'}`;
-  return small ? `<span class="delta ${cls} num">${txt}</span>` : `<span style="color:${v < 0 ? 'var(--accent)' : v > 0 ? 'var(--danger)' : 'inherit'}">${txt}</span>`;
+  return small ? `<span class="delta ${cls} num">${txt}</span>` : `<span style="color:${good ? 'var(--accent)' : bad ? 'var(--danger)' : 'inherit'}">${txt}</span>`;
 }
 
 function bmiLabel(b) {

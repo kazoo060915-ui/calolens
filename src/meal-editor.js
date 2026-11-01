@@ -4,14 +4,26 @@ import { openSheet, toast, confirmSheet } from './ui.js';
 import { store } from './store.js';
 import { analyzeMeal } from './gemini.js';
 import { loadImage, resizeImage, putPhoto, deletePhoto, hydratePhotos } from './photos.js';
-import { MEAL_TYPES, esc, uid, sumItems, fmtInt, r1, guessMealType, todayStr } from './utils.js';
+import { MEAL_TYPES, esc, uid, sumItems, fmtInt, r1, guessMealType, todayStr, fmtDateJP } from './utils.js';
 
 const emptyItem = () => ({ name: '', amount: '', kcal: '', protein: '', fat: '', carbs: '' });
 
 /** 追加方法を選ぶメニュー */
 export function openAddMenu({ date = todayStr(), mealType = guessMealType() } = {}) {
+  const hasApiKey = !!store.state.settings.apiKey;
+  const mtObj = MEAL_TYPES.find((m) => m.id === mealType) || MEAL_TYPES[0];
+  const recent = store.recentMeals(5);
+
   const sheet = openSheet(`
-    <h2 class="sheet-title">食事を記録</h2>
+    <h2 class="sheet-title">
+      <span>食事を記録 <span class="card-sub" style="font-weight:500">${mtObj.emoji} ${mtObj.label} ・ ${fmtDateJP(date)}</span></span>
+      <button class="icon-btn" data-act="close" aria-label="閉じる">${icons.x}</button>
+    </h2>
+    ${
+      !hasApiKey
+        ? `<div class="banner" style="margin-bottom:12px">${icons.alert}<div>AI自動解析を使うには、<a href="#settings" id="link-settings">設定画面</a>でGemini APIキーを登録してください。</div></div>`
+        : ''
+    }
     <div class="add-grid">
       <label class="add-option primary" id="opt-camera">
         ${icons.camera}
@@ -31,8 +43,54 @@ export function openAddMenu({ date = todayStr(), mealType = guessMealType() } = 
       <textarea class="input" id="ai-text" rows="2" placeholder="例：牛丼 並盛とみそ汁、サラダ"></textarea>
       <button class="btn btn-ghost btn-block" id="btn-text-ai">${icons.sparkles} 文章からAIでカロリー推定</button>
     </div>
+    ${
+      recent.length
+        ? `<div class="recent-meals" style="margin-top:16px">
+             <div class="card-sub" style="font-weight:700;margin-bottom:8px">最近の食事からワンタップ記録</div>
+             <div class="meal-list">
+               ${recent
+                 .map(
+                   (m, idx) => `
+                 <button class="meal-row" data-recent="${idx}">
+                   <div class="info">
+                     <div class="name">${esc(m.name)}</div>
+                     <div class="macros num">
+                       <span style="color:var(--protein)">P ${r1(m.protein)}</span>
+                       <span style="color:var(--fat)">F ${r1(m.fat)}</span>
+                       <span style="color:var(--carbs)">C ${r1(m.carbs)}</span>
+                     </div>
+                   </div>
+                   <div class="kcal num">${fmtInt(m.kcal)}<small> kcal</small></div>
+                 </button>`
+                 )
+                 .join('')}
+             </div>
+           </div>`
+        : ''
+    }
     <button class="btn btn-link btn-block" id="btn-manual" style="margin-top:8px">${icons.edit} 手動で入力する</button>
   `);
+
+  sheet.el.querySelector('[data-act="close"]')?.addEventListener('click', () => sheet.close());
+  sheet.el.querySelector('#link-settings')?.addEventListener('click', () => sheet.close());
+
+  sheet.el.addEventListener('click', (e) => {
+    const recBtn = e.target.closest('[data-recent]');
+    if (recBtn) {
+      const src = recent[+recBtn.dataset.recent];
+      if (!src) return;
+      const saved = store.saveMeal({
+        date,
+        mealType,
+        name: src.name,
+        items: structuredClone(src.items),
+        comment: src.comment || '',
+        hasPhoto: false,
+      });
+      sheet.close();
+      toast(`「${saved.name}」を記録しました（${fmtInt(saved.kcal)} kcal）`);
+    }
+  });
 
   const onFile = (e) => {
     const file = e.target.files?.[0];
@@ -76,7 +134,27 @@ export function openEditor({ date, mealType, file, text, meal } = {}) {
     text: text || '',
   };
 
-  const sheet = openSheet('');
+  let abortCtrl = null;
+  let dirty = !!(file || text);
+  let isDisposed = false;
+
+  const sheet = openSheet('', {
+    beforeClose: async () => {
+      if (ctx.status === 'analyzing' || dirty) {
+        return await confirmSheet({
+          title: '編集を終了しますか？',
+          message: 'まだ記録されていません。入力中の内容は破棄されます。',
+          okLabel: '破棄して閉じる',
+          danger: true,
+        });
+      }
+      return true;
+    },
+    onClose: () => {
+      isDisposed = true;
+      abortCtrl?.abort();
+    },
+  });
   const el = sheet.el;
 
   /* ---------- 描画 ---------- */
@@ -205,13 +283,19 @@ export function openEditor({ date, mealType, file, text, meal } = {}) {
 
   /* ---------- AI解析 ---------- */
   const analyze = async (extraHint = '') => {
+    abortCtrl?.abort();
+    abortCtrl = new AbortController();
     ctx.status = 'analyzing';
     ctx.error = '';
     render();
     try {
       const { apiKey, model } = store.state.settings;
       const hint = [ctx.apiImage ? '' : ctx.text, extraHint].filter(Boolean).join('\n');
-      const result = await analyzeMeal({ imageDataUrl: ctx.apiImage, text: ctx.apiImage ? extraHint : hint }, { apiKey, model });
+      const result = await analyzeMeal(
+        { imageDataUrl: ctx.apiImage, text: ctx.apiImage ? extraHint : hint },
+        { apiKey, model, signal: abortCtrl.signal }
+      );
+      if (isDisposed) return;
       if (!result.isFood || !result.items.length) {
         throw new Error('食べ物を認識できませんでした。別の角度から撮影するか、手動で入力してください。');
       }
@@ -219,9 +303,11 @@ export function openEditor({ date, mealType, file, text, meal } = {}) {
       if (!draft.name || !isEdit) draft.name = result.mealName;
       draft.comment = result.comment;
       ctx.status = 'ready';
+      dirty = true;
       render();
       toast(`AI解析完了：${fmtInt(sumItems(draft.items).kcal)} kcal`);
     } catch (err) {
+      if (isDisposed || abortCtrl.signal.aborted) return;
       ctx.status = 'error';
       ctx.error = err.message;
       if (!draft.items.length) draft.items.push(emptyItem());
@@ -232,6 +318,7 @@ export function openEditor({ date, mealType, file, text, meal } = {}) {
   /* ---------- イベント ---------- */
   el.addEventListener('input', (e) => {
     const t = e.target;
+    dirty = true;
     if (t.dataset.idx !== undefined) {
       draft.items[+t.dataset.idx][t.dataset.key] = t.value;
       if (['kcal', 'protein', 'fat', 'carbs'].includes(t.dataset.key)) updateTotals();
@@ -257,8 +344,8 @@ export function openEditor({ date, mealType, file, text, meal } = {}) {
     const act = e.target.closest('[data-act]')?.dataset.act;
     if (!act) return;
 
-    if (act === 'close') sheet.close();
-    if (act === 'go-settings') sheet.close();
+    if (act === 'close') sheet.close(false);
+    if (act === 'go-settings') sheet.close(true);
     if (act === 'add-item') {
       draft.items.push(emptyItem());
       el.querySelector('#items').innerHTML = draft.items.map(itemHtml).join('');

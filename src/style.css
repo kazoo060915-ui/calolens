@@ -343,8 +343,8 @@ input[type='number']::-webkit-inner-spin-button {
 }
 
 .icon-btn {
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   border-radius: 999px;
   border: none;
   background: transparent;
@@ -379,7 +379,8 @@ input[type='number']::-webkit-inner-spin-button {
   border: none;
   background: transparent;
   color: var(--text-2);
-  padding: 6px 12px;
+  padding: 8px 14px;
+  min-height: 36px;
   border-radius: 9px;
   font-size: 13px;
   font-weight: 700;
@@ -1220,8 +1221,9 @@ textarea.input {
   position: absolute;
   inset: -4px;
   border-radius: 26px;
-  border: 2px solid rgba(52, 211, 153, 0.5);
-  animation: pulse 2.4s ease-out infinite;
+  border: 2px solid rgba(52, 211, 153, 0.35);
+  animation: pulse 3.2s ease-out 3;
+  opacity: 0;
 }
 
 @keyframes pulse {
@@ -1584,7 +1586,7 @@ textarea.input {
 
 .item-card .row1 {
   display: grid;
-  grid-template-columns: 1fr 96px 36px;
+  grid-template-columns: 1fr 96px 40px;
   gap: 8px;
   align-items: center;
 }
@@ -1597,9 +1599,9 @@ textarea.input {
 }
 
 .item-card .input {
-  min-height: 40px;
+  min-height: 42px;
   padding: 8px 10px;
-  font-size: 15px;
+  font-size: 16px; /* iOS Safariでの意図しない画面ズームを防止 */
 }
 
 .mini-field {

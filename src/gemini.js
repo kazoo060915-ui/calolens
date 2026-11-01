@@ -1,8 +1,8 @@
 // Gemini API で食事写真／テキストからカロリー・PFCを推定する
 import { num } from './utils.js';
 
-const endpoint = (model, apiKey) =>
-  `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+const endpoint = (model) =>
+  `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
 
 const SCHEMA = {
   type: 'OBJECT',
@@ -43,11 +43,12 @@ const PROMPT = `あなたは日本の管理栄養士です。食事の内容を�
 async function fetchWithRetry(url, options, maxRetries = 2) {
   let attempt = 0;
   while (attempt <= maxRetries) {
+    const controller = new AbortController();
+    const onExternalAbort = () => controller.abort();
+    options.signal?.addEventListener('abort', onExternalAbort, { once: true });
+    const timeoutId = setTimeout(() => controller.abort(), 20000); // 20秒タイムアウト
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 20000); // 20秒タイムアウト
       const res = await fetch(url, { ...options, signal: controller.signal });
-      clearTimeout(timeoutId);
 
       // 503 または 429 の一時的エラーなら少し待ってリトライ
       if ((res.status === 503 || res.status === 429) && attempt < maxRetries) {
@@ -57,6 +58,9 @@ async function fetchWithRetry(url, options, maxRetries = 2) {
       }
       return res;
     } catch (err) {
+      if (options.signal?.aborted) {
+        throw err;
+      }
       if (err.name === 'AbortError') {
         throw new Error('サーバーからの応答がタイムアウトしました。通信環境を確認し、もう一度お試しください。');
       }
@@ -66,15 +70,18 @@ async function fetchWithRetry(url, options, maxRetries = 2) {
         continue;
       }
       throw err;
+    } finally {
+      clearTimeout(timeoutId);
+      options.signal?.removeEventListener('abort', onExternalAbort);
     }
   }
 }
 
 /**
  * @param {{imageDataUrl?: string, text?: string}} input
- * @param {{apiKey: string, model: string}} opts
+ * @param {{apiKey: string, model: string, signal?: AbortSignal}} opts
  */
-export async function analyzeMeal({ imageDataUrl, text }, { apiKey, model }) {
+export async function analyzeMeal({ imageDataUrl, text }, { apiKey, model, signal }) {
   if (!apiKey) throw new Error('Gemini APIキーが未設定です。設定画面から登録してください。');
 
   const cleanKey = apiKey.trim();
@@ -94,15 +101,17 @@ export async function analyzeMeal({ imageDataUrl, text }, { apiKey, model }) {
 
   let res;
   try {
-    res = await fetchWithRetry(endpoint(model, cleanKey), {
+    res = await fetchWithRetry(endpoint(model), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': cleanKey },
+      signal,
       body: JSON.stringify({
         contents: [{ role: 'user', parts }],
         generationConfig: { responseMimeType: 'application/json', responseSchema: SCHEMA },
       }),
     });
   } catch (err) {
+    if (signal?.aborted) throw err;
     throw new Error(err.message || '通信に失敗しました。インターネット接続を確認してください。');
   }
 
@@ -163,7 +172,7 @@ export async function testConnection({ apiKey, model }) {
 
   let res;
   try {
-    res = await fetchWithRetry(endpoint(model, cleanKey), {
+    res = await fetchWithRetry(endpoint(model), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': cleanKey },
       body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'OKとだけ返答してください' }] }] }),

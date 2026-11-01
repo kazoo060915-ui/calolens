@@ -6,9 +6,11 @@ let openCount = 0;
 
 /**
  * ボトムシートを開く
- * @returns {{el: HTMLElement, close: () => void}}
+ * @param {string} html
+ * @param {{onClose?: () => void, beforeClose?: () => boolean | Promise<boolean>}} [opts]
+ * @returns {{el: HTMLElement, close: (force?: boolean) => Promise<void>}}
  */
-export function openSheet(html = '', { onClose } = {}) {
+export function openSheet(html = '', { onClose, beforeClose } = {}) {
   const root = document.getElementById('sheet-root');
   const wrap = document.createElement('div');
   wrap.className = 'sheet-backdrop';
@@ -19,9 +21,21 @@ export function openSheet(html = '', { onClose } = {}) {
   requestAnimationFrame(() => requestAnimationFrame(() => wrap.classList.add('open')));
 
   let closed = false;
-  const close = () => {
+  const onKeyDown = (e) => {
+    if (e.key === 'Escape' && root.lastElementChild === wrap) {
+      close(false);
+    }
+  };
+  document.addEventListener('keydown', onKeyDown);
+
+  const close = async (force = true) => {
     if (closed) return;
+    if (!force && beforeClose) {
+      const ok = await beforeClose();
+      if (!ok || closed) return;
+    }
     closed = true;
+    document.removeEventListener('keydown', onKeyDown);
     wrap.classList.remove('open');
     openCount--;
     if (openCount <= 0) document.body.classList.remove('no-scroll');
@@ -29,7 +43,7 @@ export function openSheet(html = '', { onClose } = {}) {
     onClose?.();
   };
   wrap.addEventListener('click', (e) => {
-    if (e.target === wrap) close();
+    if (e.target === wrap) close(false);
   });
   return { el: wrap.querySelector('.sheet-body'), close };
 }

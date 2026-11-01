@@ -1,8 +1,18 @@
 // 食事写真の保存（IndexedDB）と画像処理
 const DB_NAME = 'calolens';
 const STORE = 'photos';
+const MAX_CACHE = 40;
 let dbPromise;
 const cache = new Map();
+
+function setCache(id, val) {
+  if (cache.has(id)) cache.delete(id);
+  cache.set(id, val);
+  if (cache.size > MAX_CACHE) {
+    const oldest = cache.keys().next().value;
+    cache.delete(oldest);
+  }
+}
 
 function db() {
   return (dbPromise ??= new Promise((resolve, reject) => {
@@ -26,14 +36,14 @@ function run(mode, fn) {
 }
 
 export async function putPhoto(id, dataUrl) {
-  cache.set(id, dataUrl);
+  setCache(id, dataUrl);
   await run('readwrite', (s) => s.put(dataUrl, id));
 }
 
 export async function getPhoto(id) {
   if (cache.has(id)) return cache.get(id);
   const v = (await run('readonly', (s) => s.get(id))) ?? null;
-  cache.set(id, v);
+  if (v) setCache(id, v);
   return v;
 }
 

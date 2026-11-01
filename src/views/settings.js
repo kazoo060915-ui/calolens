@@ -225,8 +225,17 @@ export const settings = {
       store.updateSettings({ [t.dataset.setting]: v });
     }
     if (t.id === 'import-file' && t.files?.[0]) {
+      const file = t.files[0];
+      t.value = '';
+      const ok = await confirmSheet({
+        title: 'バックアップから復元',
+        message: '現在の食事・体重データをバックアップファイルの内容で上書きしますか？',
+        okLabel: '復元する',
+      });
+      if (!ok) return;
       try {
-        store.importJSON(await t.files[0].text());
+        store.importJSON(await file.text());
+        await clearPhotos().catch(() => {});
         this.render();
         toast('データを復元しました');
       } catch (err) {
@@ -245,7 +254,7 @@ function previewHtml(s, weight) {
   const bmr = calcBMR(s, weight);
   const auto = calcAutoKcal(s, weight);
   const mode = s.autoKcal
-    ? `基礎代謝 ${fmtInt(bmr)} kcal × 活動量 ${s.activity}${num(s.targetWeight) && weight ? (num(s.targetWeight) < weight ? ' − 減量分 400' : num(s.targetWeight) > weight ? ' + 増量分 300' : '') : ''}`
+    ? `基礎代謝 ${fmtInt(bmr)} kcal × 活動量 ${esc(s.activity)}${num(s.targetWeight) && weight ? (num(s.targetWeight) < weight ? ' − 減量分 400' : num(s.targetWeight) > weight ? ' + 増量分 300' : '') : ''}`
     : `自動計算の場合：${fmtInt(auto)} kcal`;
   return `<div class="kcal-preview"><span class="card-sub">1日の目標</span><span class="v num">${fmtInt(kcal)}</span><span class="card-sub">kcal</span></div>
     <p class="hint" style="margin-top:6px">${mode}${!weight ? '（体重未記録のため標準体重で仮計算）' : ''}</p>`;

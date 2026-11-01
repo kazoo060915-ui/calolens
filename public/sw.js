@@ -1,6 +1,6 @@
 // CaloLens Service Worker
 // アプリ本体をキャッシュしてオフラインでも起動できるようにする（AI解析はオンライン時のみ）
-const CACHE = 'calolens-v1';
+const CACHE = 'calolens-v2';
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(['/', '/manifest.webmanifest'])));
@@ -21,7 +21,7 @@ self.addEventListener('fetch', (e) => {
   // Gemini APIなど外部APIはキャッシュしない
   if (url.hostname.includes('googleapis.com') && !url.hostname.startsWith('fonts')) return;
 
-  // ネットワーク優先、失敗時はキャッシュ
+  // ネットワーク優先、失敗時はキャッシュ（ページ遷移時のみ '/' にフォールバック）
   e.respondWith(
     fetch(request)
       .then((res) => {
@@ -31,6 +31,8 @@ self.addEventListener('fetch', (e) => {
         }
         return res;
       })
-      .catch(() => caches.match(request).then((r) => r || caches.match('/')))
+      .catch(() =>
+        caches.match(request).then((r) => r || (request.mode === 'navigate' ? caches.match('/') : Response.error()))
+      )
   );
 });

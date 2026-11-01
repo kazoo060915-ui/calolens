@@ -1,6 +1,7 @@
 // レポート画面：日別カロリーと平均PFCバランス
 import { store } from '../store.js';
 import { Chart } from '../charts.js';
+import { home } from './home.js';
 import { todayStr, addDays, fmtShort, fmtInt, r1 } from '../utils.js';
 
 let range = 7;
@@ -131,6 +132,16 @@ export const report = {
         options: {
           responsive: true,
           maintainAspectRatio: false,
+          onClick: (_e, elements) => {
+            if (elements.length > 0) {
+              const idx = elements[0].index;
+              const targetDate = daily[idx]?.date;
+              if (targetDate) {
+                home.setDate(targetDate);
+                location.hash = '#home';
+              }
+            }
+          },
           scales: {
             x: { grid: { display: false }, ticks: { maxTicksLimit: range > 7 ? 8 : 7, maxRotation: 0 } },
             y: { beginAtZero: true, ticks: { maxTicksLimit: 6 } },

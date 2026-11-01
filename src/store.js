@@ -96,6 +96,20 @@ export const store = {
   dayTotals(date) {
     return sumItems(this.mealsOn(date));
   },
+  /** 最近記録したユニークな食事メニュー（ワンタップ再記録用） */
+  recentMeals(limit = 6) {
+    const seen = new Set();
+    const out = [];
+    const sorted = [...state.meals].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    for (const m of sorted) {
+      const key = `${m.name}|${m.kcal}`;
+      if (!m.name || seen.has(key)) continue;
+      seen.add(key);
+      out.push(m);
+      if (out.length >= limit) break;
+    }
+    return out;
+  },
 
   /* ---------- 体重・体組成 ---------- */
   setWeight(date, weight, bodyFat = null, muscleMass = null) {
@@ -140,12 +154,68 @@ export const store = {
   },
   importJSON(text) {
     const data = JSON.parse(text);
-    if (!Array.isArray(data.meals) || typeof data.weights !== 'object') throw new Error('CaloLensのバックアップファイルではありません');
+    if (!data || !Array.isArray(data.meals) || typeof data.weights !== 'object' || data.weights === null) {
+      throw new Error('CaloLensのバックアップファイルではありません');
+    }
     const d = defaults();
+    const rawS = data.settings || {};
+    const safeSettings = {
+      apiKey: state.settings.apiKey,
+      model: typeof rawS.model === 'string' && rawS.model.trim() ? rawS.model.trim() : d.settings.model,
+      sex: rawS.sex === 'female' ? 'female' : 'male',
+      age: Math.min(120, Math.max(10, Math.round(num(rawS.age, d.settings.age)))),
+      height: Math.min(250, Math.max(100, num(rawS.height, d.settings.height))),
+      activity: [1.3, 1.5, 1.75, 2.0].includes(num(rawS.activity)) ? num(rawS.activity) : d.settings.activity,
+      targetWeight: rawS.targetWeight != null && num(rawS.targetWeight) >= 20 && num(rawS.targetWeight) <= 300 ? num(rawS.targetWeight) : null,
+      autoKcal: rawS.autoKcal !== false,
+      targetKcal: Math.min(10000, Math.max(800, Math.round(num(rawS.targetKcal, d.settings.targetKcal)))),
+    };
+    const safeMeals = data.meals
+      .filter((m) => m && typeof m.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(m.date))
+      .map((m) => {
+        const items = Array.isArray(m.items)
+          ? m.items.map((i) => ({
+              name: String(i?.name || '').trim(),
+              amount: String(i?.amount || '').trim(),
+              kcal: Math.max(0, Math.round(num(i?.kcal))),
+              protein: Math.max(0, num(i?.protein)),
+              fat: Math.max(0, num(i?.fat)),
+              carbs: Math.max(0, num(i?.carbs)),
+            }))
+          : [];
+        const totals = sumItems(items);
+        return {
+          id: typeof m.id === 'string' && m.id ? m.id : uid(),
+          date: m.date,
+          mealType: ['breakfast', 'lunch', 'dinner', 'snack'].includes(m.mealType) ? m.mealType : 'lunch',
+          name: String(m.name || '食事').trim(),
+          items,
+          kcal: Math.round(totals.kcal),
+          protein: totals.protein,
+          fat: totals.fat,
+          carbs: totals.carbs,
+          comment: String(m.comment || ''),
+          hasPhoto: false,
+          createdAt: num(m.createdAt, Date.now()),
+        };
+      });
+    const safeWeights = {};
+    for (const [k, v] of Object.entries(data.weights)) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(k) || !v || typeof v !== 'object') continue;
+      const w = num(v.weight, NaN);
+      if (!(w >= 20 && w <= 300)) continue;
+      const bf = v.bodyFat != null && v.bodyFat !== '' ? num(v.bodyFat, NaN) : null;
+      const mm = v.muscleMass != null && v.muscleMass !== '' ? num(v.muscleMass, NaN) : null;
+      safeWeights[k] = {
+        weight: w,
+        bodyFat: bf !== null && bf >= 1 && bf <= 70 ? bf : null,
+        muscleMass: mm !== null && mm >= 5 && mm <= 150 ? mm : null,
+      };
+    }
     state = {
-      settings: { ...d.settings, ...data.settings, apiKey: state.settings.apiKey },
-      meals: data.meals.map((m) => ({ ...m, hasPhoto: false })),
-      weights: data.weights,
+      settings: safeSettings,
+      meals: safeMeals,
+      weights: safeWeights,
     };
     commit();
   },
