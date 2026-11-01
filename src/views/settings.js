@@ -28,6 +28,7 @@ export const settings = {
     this.render();
     view.onclick = (e) => this.onClick(e);
     view.onchange = (e) => this.onChange(e);
+    view.oninput = (e) => this.onInput(e);
   },
 
   // 入力中にフォーカスが外れないよう、全体の再描画はせずプレビューだけ更新
@@ -42,6 +43,7 @@ export const settings = {
 
   destroy() {
     this.view.onchange = null;
+    this.view.oninput = null;
   },
 
   render() {
@@ -147,6 +149,8 @@ export const settings = {
     }
     if (id === 'btn-test') {
       const btn = this.view.querySelector('#btn-test');
+      const keyInput = this.view.querySelector('#api-key');
+      if (keyInput) store.updateSettings({ apiKey: keyInput.value.trim() });
       const { apiKey, model } = store.state.settings;
       if (!apiKey) return toast('APIキーを入力してください', 'error');
       btn.disabled = true;
@@ -182,6 +186,16 @@ export const settings = {
       await clearPhotos().catch(() => {});
       this.render();
       toast('すべてのデータを削除しました');
+    }
+  },
+
+  onInput(e) {
+    const t = e.target;
+    if (t.id === 'api-key') {
+      store.updateSettings({ apiKey: t.value.trim() });
+    }
+    if (t.id === 'model-custom' && t.value.trim()) {
+      store.updateSettings({ model: t.value.trim() });
     }
   },
 
