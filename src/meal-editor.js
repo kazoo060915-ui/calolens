@@ -4,7 +4,7 @@ import { openSheet, toast, confirmSheet } from './ui.js';
 import { store } from './store.js';
 import { analyzeMeal } from './gemini.js';
 import { loadImage, resizeImage, putPhoto, deletePhoto, hydratePhotos } from './photos.js';
-import { MEAL_TYPES, esc, uid, sumItems, fmtInt, r1, guessMealType, todayStr, fmtDateJP } from './utils.js';
+import { MEAL_TYPES, KYOJATORE_PRESETS, esc, uid, sumItems, fmtInt, r1, guessMealType, todayStr, fmtDateJP } from './utils.js';
 
 const emptyItem = () => ({ name: '', amount: '', kcal: '', protein: '', fat: '', carbs: '', qty: 1 });
 const QTY_STEPS = [0.25, 0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -81,6 +81,21 @@ export function openAddMenu({ date = todayStr(), mealType = guessMealType() } = 
       <textarea class="input" id="ai-text" rows="2" placeholder="例：牛丼 並盛とみそ汁、サラダ"></textarea>
       <button class="btn btn-ghost btn-block" id="btn-text-ai">${icons.sparkles} 文章からAIでカロリー推定</button>
     </div>
+    <div class="recent-meals" style="margin-top:14px">
+      <div class="card-sub" style="font-weight:700;margin-bottom:8px">⚡ キョジャトレ胃に優しい定番（1タップ追加）</div>
+      <div class="preset-scroll">
+        ${KYOJATORE_PRESETS.map((p) => {
+          const pkcal = sumItems(p.items).kcal;
+          return `<button type="button" class="preset-chip" data-preset="${p.id}">
+            <span class="p-emoji">${p.emoji}</span>
+            <span class="p-body">
+              <span class="p-name">${esc(p.shortLabel)}</span>
+              <span class="p-kcal num">+${fmtInt(pkcal)} kcal</span>
+            </span>
+          </button>`;
+        }).join('')}
+      </div>
+    </div>
     ${
       recent.length
         ? `<div class="recent-meals" style="margin-top:16px">
@@ -113,6 +128,22 @@ export function openAddMenu({ date = todayStr(), mealType = guessMealType() } = 
   sheet.el.querySelector('#link-settings')?.addEventListener('click', () => sheet.close());
 
   sheet.el.addEventListener('click', (e) => {
+    const presetBtn = e.target.closest('[data-preset]');
+    if (presetBtn) {
+      const preset = KYOJATORE_PRESETS.find((p) => p.id === presetBtn.dataset.preset);
+      if (!preset) return;
+      const saved = store.saveMeal({
+        date,
+        mealType,
+        name: preset.name,
+        items: structuredClone(preset.items),
+        comment: preset.comment,
+        hasPhoto: false,
+      });
+      sheet.close();
+      toast(`${preset.emoji}「${saved.name}」を記録しました（+${fmtInt(saved.kcal)} kcal）`);
+      return;
+    }
     const recBtn = e.target.closest('[data-recent]');
     if (recBtn) {
       const src = recent[+recBtn.dataset.recent];

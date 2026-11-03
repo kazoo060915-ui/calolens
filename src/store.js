@@ -11,16 +11,19 @@ const defaults = () => ({
     model: DEFAULT_MODEL,
     sex: 'male',
     age: 35,
-    height: 170,
-    activity: 1.5,
-    targetWeight: null,
+    height: 177,
+    activity: 1.75,
+    targetWeight: 62,
+    goalMode: 'gain', // 'gain' (キョジャトレ増量) | 'lose' (減量)
     autoKcal: true,
-    targetKcal: 2000,
+    targetKcal: 2300,
   },
   /** @type {Array<{id:string,date:string,mealType:string,name:string,items:any[],kcal:number,protein:number,fat:number,carbs:number,comment:string,hasPhoto:boolean,createdAt:number}>} */
   meals: [],
-  /** @type {Record<string,{weight:number,bodyFat:number|null}>} */
+  /** @type {Record<string,{weight:number,bodyFat:number|null,muscleMass?:number|null}>} */
   weights: {},
+  /** @type {Record<string,{stomach?:'good'|'ok'|'bad',sleepiness?:'good'|'ok'|'bad',recovery?:'good'|'ok'|'bad',workouts?:string[],note?:string}>} */
+  dailyLogs: {},
 });
 
 function load() {
@@ -29,7 +32,12 @@ function load() {
     if (!raw) return defaults();
     const s = JSON.parse(raw);
     const d = defaults();
-    return { ...d, ...s, settings: { ...d.settings, ...(s.settings || {}) } };
+    return {
+      ...d,
+      ...s,
+      settings: { ...d.settings, ...(s.settings || {}) },
+      dailyLogs: s.dailyLogs && typeof s.dailyLogs === 'object' ? s.dailyLogs : {},
+    };
   } catch {
     return defaults();
   }
@@ -136,15 +144,49 @@ export const store = {
     return list.length ? list[list.length - 1] : null;
   },
 
+  /* ---------- キョジャトレ体調＆トレ記録 ---------- */
+  dayLog(date) {
+    if (!state.dailyLogs) state.dailyLogs = {};
+    return state.dailyLogs[date] || { workouts: [] };
+  },
+  setCondition(date, key, val) {
+    if (!state.dailyLogs) state.dailyLogs = {};
+    const cur = state.dailyLogs[date] || { workouts: [] };
+    cur[key] = cur[key] === val ? null : val;
+    state.dailyLogs[date] = cur;
+    commit();
+  },
+  toggleWorkout(date, workoutId) {
+    if (!state.dailyLogs) state.dailyLogs = {};
+    const cur = state.dailyLogs[date] || { workouts: [] };
+    const list = Array.isArray(cur.workouts) ? [...cur.workouts] : [];
+    const idx = list.indexOf(workoutId);
+    if (idx >= 0) list.splice(idx, 1);
+    else list.push(workoutId);
+    cur.workouts = list;
+    state.dailyLogs[date] = cur;
+    commit();
+  },
+
   /* ---------- 設定 ---------- */
   updateSettings(patch) {
     state.settings = { ...state.settings, ...patch };
     commit();
   },
+  /** 増量（キョジャトレ）モードかどうか */
+  isGainMode() {
+    const s = state.settings;
+    if (s.goalMode === 'lose') return false;
+    if (s.goalMode === 'gain') return true;
+    const lw = this.latestWeight()?.weight;
+    const tw = num(s.targetWeight, 0);
+    if (tw && lw) return tw >= lw;
+    return true;
+  },
   /** 目標摂取カロリー */
   targetKcal() {
     const s = state.settings;
-    if (!s.autoKcal) return Math.max(800, Math.round(num(s.targetKcal, 2000)));
+    if (!s.autoKcal) return Math.max(800, Math.round(num(s.targetKcal, 2300)));
     return calcAutoKcal(s, this.latestWeight()?.weight);
   },
 
@@ -167,7 +209,8 @@ export const store = {
       age: Math.min(120, Math.max(10, Math.round(num(rawS.age, d.settings.age)))),
       height: Math.min(250, Math.max(100, num(rawS.height, d.settings.height))),
       activity: [1.3, 1.5, 1.75, 2.0].includes(num(rawS.activity)) ? num(rawS.activity) : d.settings.activity,
-      targetWeight: rawS.targetWeight != null && num(rawS.targetWeight) >= 20 && num(rawS.targetWeight) <= 300 ? num(rawS.targetWeight) : null,
+      targetWeight: rawS.targetWeight != null && num(rawS.targetWeight) >= 20 && num(rawS.targetWeight) <= 300 ? num(rawS.targetWeight) : d.settings.targetWeight,
+      goalMode: rawS.goalMode === 'lose' ? 'lose' : 'gain',
       autoKcal: rawS.autoKcal !== false,
       targetKcal: Math.min(10000, Math.max(800, Math.round(num(rawS.targetKcal, d.settings.targetKcal)))),
     };
@@ -213,10 +256,12 @@ export const store = {
         muscleMass: mm !== null && mm >= 5 && mm <= 150 ? mm : null,
       };
     }
+    const safeDailyLogs = data.dailyLogs && typeof data.dailyLogs === 'object' ? data.dailyLogs : {};
     state = {
       settings: safeSettings,
       meals: safeMeals,
       weights: safeWeights,
+      dailyLogs: safeDailyLogs,
     };
     commit();
   },
@@ -228,19 +273,19 @@ export const store = {
 
 /**
  * Mifflin-St Jeor式で基礎代謝→活動量を掛けてTDEEを算出。
- * 目標体重が現在より低ければ -400kcal（月1.5kg程度の減量ペース）、高ければ +300kcal。
+ * 目標体重が現在より低ければ -400kcal（月1.5kg程度の減量ペース）、高ければ +300kcal（胃に優しい月+1kg増量ペース）。
  */
 export function calcAutoKcal(s, weight) {
-  const w = num(weight, s.sex === 'male' ? 65 : 52);
-  const bmr = 10 * w + 6.25 * num(s.height, 165) - 5 * num(s.age, 35) + (s.sex === 'male' ? 5 : -161);
-  let kcal = bmr * num(s.activity, 1.5);
+  const w = num(weight, s.sex === 'male' ? 56 : 45);
+  const bmr = 10 * w + 6.25 * num(s.height, 177) - 5 * num(s.age, 35) + (s.sex === 'male' ? 5 : -161);
+  let kcal = bmr * num(s.activity, 1.75);
   const tw = num(s.targetWeight, 0);
   if (tw && tw < w - 0.3) kcal -= 400;
-  else if (tw && tw > w + 0.3) kcal += 300;
+  else if ((tw && tw > w + 0.3) || s.goalMode === 'gain') kcal += 300;
   return Math.round(Math.max(kcal, 1200) / 10) * 10;
 }
 
 export function calcBMR(s, weight) {
-  const w = num(weight, s.sex === 'male' ? 65 : 52);
-  return Math.round(10 * w + 6.25 * num(s.height, 165) - 5 * num(s.age, 35) + (s.sex === 'male' ? 5 : -161));
+  const w = num(weight, s.sex === 'male' ? 56 : 45);
+  return Math.round(10 * w + 6.25 * num(s.height, 177) - 5 * num(s.age, 35) + (s.sex === 'male' ? 5 : -161));
 }

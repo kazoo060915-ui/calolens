@@ -104,10 +104,17 @@ export const settings = {
         </section>
 
         <section class="card settings-section">
-          <div class="card-head"><h2 class="card-title">${icons.target} 目標</h2></div>
+          <div class="card-head"><h2 class="card-title">${icons.target} 目標・モード</h2></div>
+          <div class="field" style="margin-bottom:12px">
+            <span class="label">目的モード</span>
+            <div class="segmented" style="width:100%">
+              <button style="flex:1" data-goalmode="gain" class="${s.goalMode !== 'lose' ? 'active' : ''}">🌿 増量（キョジャトレ）</button>
+              <button style="flex:1" data-goalmode="lose" class="${s.goalMode === 'lose' ? 'active' : ''}">減量</button>
+            </div>
+          </div>
           <div class="field">
             <label for="target-weight">目標体重</label>
-            <div class="input-group"><input class="input" id="target-weight" data-setting="targetWeight" type="number" inputmode="decimal" step="0.1" value="${esc(s.targetWeight ?? '')}" placeholder="${latest ? latest.weight : '例: 60'}" /><span class="suffix">kg</span></div>
+            <div class="input-group"><input class="input" id="target-weight" data-setting="targetWeight" type="number" inputmode="decimal" step="0.1" value="${esc(s.targetWeight ?? '')}" placeholder="${latest ? latest.weight : '例: 62'}" /><span class="suffix">kg</span></div>
           </div>
           <div class="row-between" style="margin-top:16px">
             <div><div style="font-weight:700;font-size:14px">目標カロリーを自動計算</div>
@@ -136,6 +143,12 @@ export const settings = {
   },
 
   async onClick(e) {
+    const modeBtn = e.target.closest('[data-goalmode]');
+    if (modeBtn) {
+      this.view.querySelectorAll('[data-goalmode]').forEach((b) => b.classList.toggle('active', b === modeBtn));
+      store.updateSettings({ goalMode: modeBtn.dataset.goalmode });
+      return;
+    }
     const sexBtn = e.target.closest('[data-sex]');
     if (sexBtn) {
       this.view.querySelectorAll('[data-sex]').forEach((b) => b.classList.toggle('active', b === sexBtn));

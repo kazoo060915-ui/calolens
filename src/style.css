@@ -1842,3 +1842,179 @@ textarea.input {
     padding-top: 12px;
   }
 }
+
+/* ---------- KyojaTore Presets & Daily Check ---------- */
+.preset-scroll {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.preset-scroll::-webkit-scrollbar {
+  display: none;
+}
+.preset-chip {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 8px 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: transform 0.15s var(--ease), border-color 0.2s, background 0.2s;
+}
+.preset-chip:active {
+  transform: scale(0.96);
+  border-color: var(--accent);
+}
+.preset-chip .p-emoji {
+  font-size: 20px;
+}
+.preset-chip .p-body {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+.preset-chip .p-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+}
+.preset-chip .p-kcal {
+  font-size: 11px;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.cond-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cond-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 12px;
+  padding: 8px 10px;
+}
+.cond-label {
+  font-size: 13px;
+  font-weight: 700;
+}
+.cond-hint {
+  font-size: 10px;
+  color: var(--text-3);
+}
+.cond-btns {
+  display: flex;
+  gap: 4px;
+}
+.cond-btn {
+  width: 34px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  font-weight: 800;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.cond-btn.active.good {
+  background: rgba(52, 211, 153, 0.22);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.cond-btn.active.ok {
+  background: rgba(251, 191, 36, 0.22);
+  border-color: var(--warn);
+  color: var(--warn);
+}
+.cond-btn.active.bad {
+  background: rgba(251, 113, 133, 0.22);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.kyoja-alert {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(251, 191, 36, 0.12);
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text);
+}
+
+.workout-divider {
+  margin: 14px 0 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-2);
+  letter-spacing: 0.02em;
+}
+.workout-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.workout-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 11px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.18s var(--ease);
+}
+.workout-item.done {
+  background: rgba(52, 211, 153, 0.12);
+  border-color: rgba(52, 211, 153, 0.45);
+}
+.workout-item .wk-check {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  border: 1.5px solid var(--border-strong);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 900;
+  color: #0b0f14;
+  flex-shrink: 0;
+}
+.workout-item.done .wk-check {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.workout-item .wk-emoji {
+  font-size: 18px;
+}
+.workout-item .wk-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+}
+.workout-item .wk-title {
+  font-size: 13px;
+  font-weight: 700;
+}
+.workout-item .wk-sub {
+  font-size: 10px;
+  color: var(--text-3);
+}
+
