@@ -1,6 +1,6 @@
 // CaloLens Service Worker
 // アプリ本体をキャッシュしてオフラインでも起動できるようにする（AI解析はオンライン時のみ）
-const CACHE = 'calolens-v4';
+const CACHE = 'calolens-v5';
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(['/', '/manifest.webmanifest'])));

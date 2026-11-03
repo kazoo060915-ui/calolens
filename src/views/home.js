@@ -49,21 +49,6 @@ export const home = {
       }
     };
     view.onclick = (e) => {
-      const presetBtn = e.target.closest('[data-preset]');
-      if (presetBtn) {
-        const preset = KYOJATORE_PRESETS.find((p) => p.id === presetBtn.dataset.preset);
-        if (!preset) return;
-        const saved = store.saveMeal({
-          date,
-          mealType: preset.mealType,
-          name: preset.name,
-          items: structuredClone(preset.items),
-          comment: preset.comment,
-          hasPhoto: false,
-        });
-        toast(`${preset.emoji}「${saved.name}」を追加しました（+${fmtInt(saved.kcal)} kcal）`);
-        return;
-      }
       const condBtn = e.target.closest('[data-cond]');
       if (condBtn) {
         store.setCondition(date, condBtn.dataset.cond, condBtn.dataset.val);
@@ -99,7 +84,7 @@ export const home = {
     const today = todayStr();
     const isToday = date === today;
     this.headerEl.innerHTML = `
-      <div class="brand"><img src="/icons/icon-192.png" alt="" /><span>Kyoja<span class="grad">Tore</span></span></div>
+      <div class="brand"><img src="/icons/icon-192.png?v=2" alt="" /><span>Kyoja<span class="grad">Tore</span></span></div>
       <div class="date-nav">
         <button class="icon-btn" data-nav="-1" aria-label="前の日">${icons.chevronLeft}</button>
         <label class="date-label">${isToday ? `今日 <span class="num" style="color:var(--text-3);font-weight:500">${fmtShort(date)}</span>` : fmtDateJP(date)}
@@ -179,25 +164,6 @@ export const home = {
           </div>
         </section>
 
-        <section class="card preset-card" aria-label="キョジャトレ1タップ補給">
-          <div class="card-head" style="margin-bottom:8px">
-            <div class="meal-type"><span class="emoji">⚡</span>胃に優しい1タップ補給</div>
-            <span class="card-sub">タップで即追加</span>
-          </div>
-          <div class="preset-scroll">
-            ${KYOJATORE_PRESETS.map((p) => {
-              const pkcal = sumItems(p.items).kcal;
-              return `<button type="button" class="preset-chip" data-preset="${p.id}">
-                <span class="p-emoji">${p.emoji}</span>
-                <span class="p-body">
-                  <span class="p-name">${esc(p.shortLabel)}</span>
-                  <span class="p-kcal num">+${fmtInt(pkcal)} kcal</span>
-                </span>
-              </button>`;
-            }).join('')}
-          </div>
-        </section>
-
         <section class="card weight-quick" data-weight role="button" tabindex="0" aria-label="体重を記録">
           <div class="icon">${icons.scale}</div>
           <div class="info">
@@ -211,6 +177,8 @@ export const home = {
           </div>
           <span class="icon-btn">${w ? icons.edit : icons.plus}</span>
         </section>
+
+        ${MEAL_TYPES.map((mt) => mealSection(mt, meals.filter((m) => m.mealType === mt.id))).join('')}
 
         <section class="card kyoja-check-card" aria-label="キョジャトレ体調と独自トレ">
           <div class="card-head" style="margin-bottom:10px">
@@ -257,8 +225,6 @@ export const home = {
             }).join('')}
           </div>
         </section>
-
-        ${MEAL_TYPES.map((mt) => mealSection(mt, meals.filter((m) => m.mealType === mt.id))).join('')}
       </div>`;
 
     requestAnimationFrame(() => {
