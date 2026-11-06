@@ -59,6 +59,23 @@ export const home = {
         store.toggleWorkout(date, workBtn.dataset.workout);
         return;
       }
+      const quickFav = e.target.closest('[data-quick-fav]');
+      if (quickFav) {
+        const favId = quickFav.dataset.quickFav;
+        const mt = quickFav.dataset.mt;
+        const fav = store.state.favorites.find((f) => f.id === favId);
+        if (!fav) return;
+        const saved = store.saveMeal({
+          date,
+          mealType: mt || fav.mealType || 'snack',
+          name: fav.name,
+          items: structuredClone(fav.items),
+          comment: fav.comment || '',
+          hasPhoto: false,
+        });
+        toast(`⭐「${saved.name}」を記録しました（+${fmtInt(saved.kcal)} kcal）`);
+        return;
+      }
       const add = e.target.closest('[data-add]');
       if (add) return openAddMenu({ date, mealType: add.dataset.add });
       const row = e.target.closest('[data-meal]');
@@ -178,7 +195,7 @@ export const home = {
           <span class="icon-btn">${w ? icons.edit : icons.plus}</span>
         </section>
 
-        ${MEAL_TYPES.map((mt) => mealSection(mt, meals.filter((m) => m.mealType === mt.id))).join('')}
+        ${MEAL_TYPES.map((mt) => mealSection(mt, meals.filter((m) => m.mealType === mt.id), store.favorites())).join('')}
 
         <section class="card kyoja-check-card" aria-label="キョジャトレ体調と独自トレ">
           <div class="card-head" style="margin-bottom:10px">
@@ -246,8 +263,10 @@ function pfcItem(name, color, val, target) {
     </div>`;
 }
 
-function mealSection(mt, meals) {
+function mealSection(mt, meals, favorites = []) {
   const kcal = meals.reduce((a, m) => a + m.kcal, 0);
+  const matchingFavs = favorites.filter((f) => !f.mealType || f.mealType === mt.id).slice(0, 4);
+
   return `
     <section class="card meal-section" aria-label="${mt.label}">
       <div class="card-head">
@@ -273,6 +292,22 @@ function mealSection(mt, meals) {
           )
           .join('')}
       </div>
+      ${
+        matchingFavs.length
+          ? `<div class="quick-fav-row" aria-label="よく使うメニューから追加">
+               ${matchingFavs
+                 .map(
+                   (f) => `
+                 <button type="button" class="quick-fav-chip" data-quick-fav="${esc(f.id)}" data-mt="${mt.id}" title="1タップで${mt.label}に記録">
+                   <span class="qf-star">⭐</span>
+                   <span class="qf-name">${esc(f.name)}</span>
+                   <span class="qf-kcal num">+${fmtInt(f.kcal)}</span>
+                 </button>`
+                 )
+                 .join('')}
+             </div>`
+          : ''
+      }
       <button class="add-row" data-add="${mt.id}" id="add-${mt.id}">${icons.plus} ${mt.label}を追加</button>
     </section>`;
 }

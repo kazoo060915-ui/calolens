@@ -20,6 +20,8 @@ const defaults = () => ({
   },
   /** @type {Array<{id:string,date:string,mealType:string,name:string,items:any[],kcal:number,protein:number,fat:number,carbs:number,comment:string,hasPhoto:boolean,createdAt:number}>} */
   meals: [],
+  /** @type {Array<{id:string,name:string,mealType?:string,items:any[],kcal:number,protein:number,fat:number,carbs:number,comment?:string,createdAt:number}>} */
+  favorites: [],
   /** @type {Record<string,{weight:number,bodyFat:number|null,muscleMass?:number|null}>} */
   weights: {},
   /** @type {Record<string,{stomach?:'good'|'ok'|'bad',sleepiness?:'good'|'ok'|'bad',recovery?:'good'|'ok'|'bad',workouts?:string[],note?:string}>} */
@@ -36,6 +38,7 @@ function load() {
       ...d,
       ...s,
       settings: { ...d.settings, ...(s.settings || {}) },
+      favorites: Array.isArray(s.favorites) ? s.favorites : [],
       dailyLogs: s.dailyLogs && typeof s.dailyLogs === 'object' ? s.dailyLogs : {},
     };
   } catch {
@@ -118,6 +121,76 @@ export const store = {
       if (out.length >= limit) break;
     }
     return out;
+  },
+
+  /* ---------- よく使うメニュー（お気に入り） ---------- */
+  favorites(mealType = null) {
+    const list = Array.isArray(state.favorites) ? state.favorites : [];
+    if (!mealType) return [...list].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    return list
+      .filter((f) => !f.mealType || f.mealType === mealType)
+      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  },
+  isFavorite(name, kcal = null) {
+    if (!name) return false;
+    const clean = name.trim();
+    return (state.favorites || []).some((f) => {
+      if (f.name?.trim() !== clean) return false;
+      if (kcal !== null && Math.abs(f.kcal - kcal) > 10) return false;
+      return true;
+    });
+  },
+  addFavorite(meal) {
+    if (!state.favorites) state.favorites = [];
+    const totals = sumItems(meal.items || []);
+    const name = meal.name?.trim() || meal.items?.map((i) => i.name).filter(Boolean).join('、') || 'よく使うメニュー';
+    const kcal = Math.round(totals.kcal || meal.kcal || 0);
+
+    // 既に同一名・同一カロリーがあれば更新
+    const existingIdx = state.favorites.findIndex((f) => f.name?.trim() === name && Math.abs(f.kcal - kcal) < 5);
+    const fav = {
+      id: existingIdx >= 0 ? state.favorites[existingIdx].id : uid(),
+      name,
+      mealType: meal.mealType || '',
+      items: (meal.items || []).map((i) => ({
+        name: i.name?.trim() || '',
+        amount: i.amount?.trim() || '',
+        kcal: Math.round(num(i.kcal)),
+        protein: num(i.protein),
+        fat: num(i.fat),
+        carbs: num(i.carbs),
+        qty: num(i.qty, 1) > 0 ? num(i.qty, 1) : 1,
+      })),
+      kcal,
+      protein: totals.protein || num(meal.protein),
+      fat: totals.fat || num(meal.fat),
+      carbs: totals.carbs || num(meal.carbs),
+      comment: meal.comment || '',
+      createdAt: Date.now(),
+    };
+    if (existingIdx >= 0) {
+      state.favorites[existingIdx] = fav;
+    } else {
+      state.favorites.unshift(fav);
+    }
+    commit();
+    return fav;
+  },
+  removeFavorite(idOrName) {
+    if (!state.favorites) return;
+    state.favorites = state.favorites.filter((f) => f.id !== idOrName && f.name !== idOrName);
+    commit();
+  },
+  toggleFavorite(meal) {
+    const isFav = this.isFavorite(meal.name, meal.kcal);
+    if (isFav) {
+      const match = (state.favorites || []).find((f) => f.name?.trim() === meal.name?.trim());
+      if (match) this.removeFavorite(match.id);
+      return false;
+    } else {
+      this.addFavorite(meal);
+      return true;
+    }
   },
 
   /* ---------- 体重・体組成 ---------- */

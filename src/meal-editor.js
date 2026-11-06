@@ -46,88 +46,189 @@ function applyQty(it, nextQty) {
 export function openAddMenu({ date = todayStr(), mealType = guessMealType() } = {}) {
   const hasApiKey = !!store.state.settings.apiKey;
   const mtObj = MEAL_TYPES.find((m) => m.id === mealType) || MEAL_TYPES[0];
-  const recent = store.recentMeals(5);
 
-  const sheet = openSheet(`
-    <h2 class="sheet-title">
-      <span>食事を記録 <span class="card-sub" style="font-weight:500">${mtObj.emoji} ${mtObj.label} ・ ${fmtDateJP(date)}</span></span>
-      <button class="icon-btn" data-act="close" aria-label="閉じる">${icons.x}</button>
-    </h2>
-    ${
-      !hasApiKey
-        ? `<div class="banner" style="margin-bottom:12px">${icons.alert}<div>AI自動解析を使うには、<a href="#settings" id="link-settings">設定画面</a>でGemini APIキーを登録してください。</div></div>`
-        : ''
-    }
-    <div class="add-grid">
-      <label class="add-option primary" id="opt-camera">
-        ${icons.camera}
-        <span>写真を撮る</span>
-        <small>AIが自動でカロリー計算</small>
-        <input type="file" accept="image/*" capture="environment" class="sr-only" id="file-camera" />
-      </label>
-      <label class="add-option" id="opt-album">
-        ${icons.image}
-        <span>アルバム</span>
-        <small>撮影済みの写真から</small>
-        <input type="file" accept="image/*" class="sr-only" id="file-album" />
-      </label>
-    </div>
-    <label class="btn btn-ghost btn-block" id="opt-label" style="margin-top:10px;cursor:pointer">
-      ${icons.sparkles} <span>市販品の成分表・バーコード読取</span>
-      <input type="file" accept="image/*" capture="environment" class="sr-only" id="file-label" />
-    </label>
-    <div class="divider"><span>または</span></div>
-    <div class="text-ai">
-      <textarea class="input" id="ai-text" rows="2" placeholder="例：牛丼 並盛とみそ汁、サラダ"></textarea>
-      <button class="btn btn-ghost btn-block" id="btn-text-ai">${icons.sparkles} 文章からAIでカロリー推定</button>
-    </div>
-    <div class="recent-meals" style="margin-top:14px">
-      <div class="card-sub" style="font-weight:700;margin-bottom:8px">⚡ キョジャトレ胃に優しい定番（1タップ追加）</div>
-      <div class="preset-scroll">
-        ${KYOJATORE_PRESETS.map((p) => {
-          const pkcal = sumItems(p.items).kcal;
-          return `<button type="button" class="preset-chip" data-preset="${p.id}">
-            <span class="p-emoji">${p.emoji}</span>
-            <span class="p-body">
-              <span class="p-name">${esc(p.shortLabel)}</span>
-              <span class="p-kcal num">+${fmtInt(pkcal)} kcal</span>
-            </span>
-          </button>`;
-        }).join('')}
+  const sheet = openSheet('');
+  const el = sheet.el;
+
+  const render = () => {
+    const favorites = store.favorites();
+    const recent = store.recentMeals(6);
+
+    el.innerHTML = `
+      <h2 class="sheet-title">
+        <span>食事を記録 <span class="card-sub" style="font-weight:500">${mtObj.emoji} ${mtObj.label} ・ ${fmtDateJP(date)}</span></span>
+        <button class="icon-btn" data-act="close" aria-label="閉じる">${icons.x}</button>
+      </h2>
+      ${
+        !hasApiKey
+          ? `<div class="banner" style="margin-bottom:12px">${icons.alert}<div>AI自動解析を使うには、<a href="#settings" id="link-settings">設定画面</a>でGemini APIキーを登録してください。</div></div>`
+          : ''
+      }
+
+      ${
+        favorites.length
+          ? `<div class="favorite-section" style="margin-bottom:16px">
+               <div class="card-head" style="margin-bottom:8px">
+                 <div class="card-sub" style="font-weight:700;color:var(--warn);display:flex;align-items:center;gap:5px">
+                   <span style="display:inline-flex;color:var(--warn)">${icons.starFilled}</span> よく使うメニュー（1タップ記録）
+                 </div>
+               </div>
+               <div class="preset-scroll fav-scroll">
+                 ${favorites
+                   .map(
+                     (f) => `
+                   <div class="fav-chip-pill">
+                     <button type="button" class="preset-chip fav-chip" data-fav-add="${esc(f.id)}">
+                       <span class="p-emoji">⭐</span>
+                       <span class="p-body">
+                         <span class="p-name">${esc(f.name)}</span>
+                         <span class="p-kcal num">+${fmtInt(f.kcal)} kcal</span>
+                       </span>
+                     </button>
+                     <button type="button" class="fav-chip-del" data-fav-del="${esc(f.id)}" aria-label="よく使うメニューから削除">${icons.x}</button>
+                   </div>`
+                   )
+                   .join('')}
+               </div>
+             </div>`
+          : ''
+      }
+
+      <div class="recent-meals" style="margin-bottom:14px">
+        <div class="card-sub" style="font-weight:700;margin-bottom:8px">⚡ キョジャトレ胃に優しい定番（1タップ追加）</div>
+        <div class="preset-scroll">
+          ${KYOJATORE_PRESETS.map((p) => {
+            const pkcal = sumItems(p.items).kcal;
+            return `<button type="button" class="preset-chip" data-preset="${p.id}">
+              <span class="p-emoji">${p.emoji}</span>
+              <span class="p-body">
+                <span class="p-name">${esc(p.shortLabel)}</span>
+                <span class="p-kcal num">+${fmtInt(pkcal)} kcal</span>
+              </span>
+            </button>`;
+          }).join('')}
+        </div>
       </div>
-    </div>
-    ${
-      recent.length
-        ? `<div class="recent-meals" style="margin-top:16px">
-             <div class="card-sub" style="font-weight:700;margin-bottom:8px">最近の食事からワンタップ記録</div>
-             <div class="meal-list">
-               ${recent
-                 .map(
-                   (m, idx) => `
-                 <button class="meal-row" data-recent="${idx}">
-                   <div class="info">
-                     <div class="name">${esc(m.name)}</div>
-                     <div class="macros num">
-                       <span style="color:var(--protein)">P ${r1(m.protein)}</span>
-                       <span style="color:var(--fat)">F ${r1(m.fat)}</span>
-                       <span style="color:var(--carbs)">C ${r1(m.carbs)}</span>
-                     </div>
-                   </div>
-                   <div class="kcal num">${fmtInt(m.kcal)}<small> kcal</small></div>
-                 </button>`
-                 )
-                 .join('')}
-             </div>
-           </div>`
-        : ''
+
+      <div class="add-grid">
+        <label class="add-option primary" id="opt-camera">
+          ${icons.camera}
+          <span>写真を撮る</span>
+          <small>AIが自動でカロリー計算</small>
+          <input type="file" accept="image/*" capture="environment" class="sr-only" id="file-camera" />
+        </label>
+        <label class="add-option" id="opt-album">
+          ${icons.image}
+          <span>アルバム</span>
+          <small>撮影済みの写真から</small>
+          <input type="file" accept="image/*" class="sr-only" id="file-album" />
+        </label>
+      </div>
+      <label class="btn btn-ghost btn-block" id="opt-label" style="margin-top:10px;cursor:pointer">
+        ${icons.sparkles} <span>市販品の成分表・バーコード読取</span>
+        <input type="file" accept="image/*" capture="environment" class="sr-only" id="file-label" />
+      </label>
+      <div class="divider"><span>または</span></div>
+      <div class="text-ai">
+        <textarea class="input" id="ai-text" rows="2" placeholder="例：牛丼 並盛とみそ汁、サラダ"></textarea>
+        <button class="btn btn-ghost btn-block" id="btn-text-ai">${icons.sparkles} 文章からAIでカロリー推定</button>
+      </div>
+
+      ${
+        recent.length
+          ? `<div class="recent-meals" style="margin-top:16px">
+               <div class="card-head" style="margin-bottom:8px">
+                 <div class="card-sub" style="font-weight:700">最近の食事（タップで再記録 / ★でよく使うメニュー登録）</div>
+               </div>
+               <div class="recent-list">
+                 ${recent
+                   .map((m, idx) => {
+                     const isFav = store.isFavorite(m.name, m.kcal);
+                     return `
+                     <div class="recent-item-row">
+                       <button class="meal-row recent-meal-btn" data-recent="${idx}">
+                         <div class="info">
+                           <div class="name">${esc(m.name)}</div>
+                           <div class="macros num">
+                             <span style="color:var(--protein)">P ${r1(m.protein)}</span>
+                             <span style="color:var(--fat)">F ${r1(m.fat)}</span>
+                             <span style="color:var(--carbs)">C ${r1(m.carbs)}</span>
+                           </div>
+                         </div>
+                         <div class="kcal num">${fmtInt(m.kcal)}<small> kcal</small></div>
+                       </button>
+                       <button type="button" class="btn-fav-toggle ${isFav ? 'active' : ''}" data-recent-fav="${idx}" aria-label="${isFav ? 'よく使うメニューから解除' : 'よく使うメニューに登録'}" title="${isFav ? '登録済み（タップで解除）' : 'よく使うメニューに登録'}">
+                         ${isFav ? icons.starFilled : icons.star}
+                       </button>
+                     </div>`;
+                   })
+                   .join('')}
+               </div>
+             </div>`
+          : ''
+      }
+      <button class="btn btn-link btn-block" id="btn-manual" style="margin-top:8px">${icons.edit} 手動で入力する</button>
+    `;
+
+    // バインド
+    el.querySelector('[data-act="close"]')?.addEventListener('click', () => sheet.close());
+    el.querySelector('#link-settings')?.addEventListener('click', () => sheet.close());
+
+    const onFile = (mode = 'meal') => (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      sheet.close();
+      openEditor({ date, mealType, file, mode });
+    };
+    el.querySelector('#file-camera')?.addEventListener('change', onFile('meal'));
+    el.querySelector('#file-album')?.addEventListener('change', onFile('meal'));
+    el.querySelector('#file-label')?.addEventListener('change', onFile('label'));
+    el.querySelector('#btn-text-ai')?.addEventListener('click', () => {
+      const text = el.querySelector('#ai-text')?.value.trim();
+      if (!text) {
+        toast('食べたものを入力してください', 'error');
+        return;
+      }
+      sheet.close();
+      openEditor({ date, mealType, text });
+    });
+    el.querySelector('#btn-manual')?.addEventListener('click', () => {
+      sheet.close();
+      openEditor({ date, mealType });
+    });
+  };
+
+  el.addEventListener('click', (e) => {
+    // よく使うメニューからワンタップ追加
+    const favAdd = e.target.closest('[data-fav-add]');
+    if (favAdd) {
+      const favId = favAdd.dataset.favAdd;
+      const fav = store.state.favorites.find((f) => f.id === favId);
+      if (!fav) return;
+      const saved = store.saveMeal({
+        date,
+        mealType: fav.mealType || mealType,
+        name: fav.name,
+        items: structuredClone(fav.items),
+        comment: fav.comment || '',
+        hasPhoto: false,
+      });
+      sheet.close();
+      toast(`⭐「${saved.name}」を記録しました（+${fmtInt(saved.kcal)} kcal）`);
+      return;
     }
-    <button class="btn btn-link btn-block" id="btn-manual" style="margin-top:8px">${icons.edit} 手動で入力する</button>
-  `);
 
-  sheet.el.querySelector('[data-act="close"]')?.addEventListener('click', () => sheet.close());
-  sheet.el.querySelector('#link-settings')?.addEventListener('click', () => sheet.close());
+    // よく使うメニューから削除
+    const favDel = e.target.closest('[data-fav-del]');
+    if (favDel) {
+      const favId = favDel.dataset.favDel;
+      store.removeFavorite(favId);
+      toast('よく使うメニューから削除しました');
+      render();
+      return;
+    }
 
-  sheet.el.addEventListener('click', (e) => {
+    // キョジャトレ定番から追加
     const presetBtn = e.target.closest('[data-preset]');
     if (presetBtn) {
       const preset = KYOJATORE_PRESETS.find((p) => p.id === presetBtn.dataset.preset);
@@ -144,8 +245,23 @@ export function openAddMenu({ date = todayStr(), mealType = guessMealType() } = 
       toast(`${preset.emoji}「${saved.name}」を記録しました（+${fmtInt(saved.kcal)} kcal）`);
       return;
     }
+
+    // 最近の食事の「★」トグル
+    const favToggleBtn = e.target.closest('[data-recent-fav]');
+    if (favToggleBtn) {
+      const recent = store.recentMeals(6);
+      const src = recent[+favToggleBtn.dataset.recentFav];
+      if (!src) return;
+      const added = store.toggleFavorite(src);
+      toast(added ? `⭐「${src.name}」をよく使うメニューに登録しました` : `「${src.name}」を登録解除しました`);
+      render();
+      return;
+    }
+
+    // 最近の食事からワンタップ記録
     const recBtn = e.target.closest('[data-recent]');
     if (recBtn) {
+      const recent = store.recentMeals(6);
       const src = recent[+recBtn.dataset.recent];
       if (!src) return;
       const saved = store.saveMeal({
@@ -157,32 +273,12 @@ export function openAddMenu({ date = todayStr(), mealType = guessMealType() } = 
         hasPhoto: false,
       });
       sheet.close();
-      toast(`「${saved.name}」を記録しました（${fmtInt(saved.kcal)} kcal）`);
+      toast(`「${saved.name}」を記録しました（+${fmtInt(saved.kcal)} kcal）`);
+      return;
     }
   });
 
-  const onFile = (mode = 'meal') => (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    sheet.close();
-    openEditor({ date, mealType, file, mode });
-  };
-  sheet.el.querySelector('#file-camera').addEventListener('change', onFile('meal'));
-  sheet.el.querySelector('#file-album').addEventListener('change', onFile('meal'));
-  sheet.el.querySelector('#file-label').addEventListener('change', onFile('label'));
-  sheet.el.querySelector('#btn-text-ai').addEventListener('click', () => {
-    const text = sheet.el.querySelector('#ai-text').value.trim();
-    if (!text) {
-      toast('食べたものを入力してください', 'error');
-      return;
-    }
-    sheet.close();
-    openEditor({ date, mealType, text });
-  });
-  sheet.el.querySelector('#btn-manual').addEventListener('click', () => {
-    sheet.close();
-    openEditor({ date, mealType });
-  });
+  render();
 }
 
 /**
@@ -208,6 +304,7 @@ export function openEditor({ date, mealType, file, text, meal, mode = 'meal' } =
   let abortCtrl = null;
   let dirty = !!(file || text);
   let isDisposed = false;
+  let isFav = store.isFavorite(draft.name, sumItems(draft.items).kcal);
 
   const sheet = openSheet('', {
     beforeClose: async () => {
@@ -341,9 +438,17 @@ export function openEditor({ date, mealType, file, text, meal, mode = 'meal' } =
   };
 
   const render = () => {
+    isFav = store.isFavorite(draft.name, sumItems(draft.items).kcal);
     el.innerHTML = `
-      <h2 class="sheet-title">${isEdit ? '食事を編集' : '食事を記録'}
-        <button class="icon-btn" data-act="close" aria-label="閉じる">${icons.x}</button></h2>
+      <h2 class="sheet-title">
+        <span>${isEdit ? '食事を編集' : '食事を記録'}</span>
+        <div style="display:flex;align-items:center;gap:6px">
+          <button type="button" class="btn btn-sm btn-fav-star-action ${isFav ? 'active' : ''}" data-act="toggle-fav" aria-label="${isFav ? 'よく使うメニューから解除' : 'よく使うメニューに登録'}">
+            ${isFav ? icons.starFilled : icons.star} <span>${isFav ? '登録済' : 'よく使うメニュー'}</span>
+          </button>
+          <button class="icon-btn" data-act="close" aria-label="閉じる">${icons.x}</button>
+        </div>
+      </h2>
       ${photoHtml()}
       ${bodyHtml()}
       <div class="sheet-actions">
@@ -468,6 +573,23 @@ export function openEditor({ date, mealType, file, text, meal, mode = 'meal' } =
     }
     if (act === 'retry-hint') analyze(el.querySelector('#hint-text').value.trim());
 
+    if (act === 'toggle-fav') {
+      const items = draft.items.filter((i) => i.name?.trim() || Number(i.kcal) > 0);
+      if (!items.length && !draft.name?.trim()) {
+        toast('メニュー名または品目を入力してください', 'error');
+        return;
+      }
+      const mealToFav = {
+        ...draft,
+        items,
+        name: draft.name?.trim() || items.map((i) => i.name).filter(Boolean).join('、') || 'よく使うメニュー',
+      };
+      const added = store.toggleFavorite(mealToFav);
+      toast(added ? `⭐「${mealToFav.name}」をよく使うメニューに登録しました` : `「${mealToFav.name}」を登録解除しました`);
+      render();
+      return;
+    }
+
     if (act === 'save') {
       const items = draft.items.filter((i) => i.name?.trim() || Number(i.kcal) > 0);
       if (!items.length) {
@@ -481,6 +603,9 @@ export function openEditor({ date, mealType, file, text, meal, mode = 'meal' } =
           draft.hasPhoto = true;
         }
         const saved = store.saveMeal({ ...draft, items });
+        if (isFav) {
+          store.addFavorite({ ...draft, items, name: saved.name });
+        }
         sheet.close();
         toast(`${isEdit ? '更新' : '記録'}しました（${fmtInt(saved.kcal)} kcal）`);
       } catch (err) {
